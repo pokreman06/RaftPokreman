@@ -1,5 +1,4 @@
 # raft-pokreman06
-raft-pokreman06 created by GitHub Classroom
 
 
 # Proposed test scenarios
