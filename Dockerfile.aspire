@@ -1,0 +1,15 @@
+FROM mcr.microsoft.com/dotnet/aspire-dashboard:8.0 as aspire
+
+FROM debian:bookworm-slim
+
+# Install .NET runtime and curl
+RUN apt-get update && apt-get install -y curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+# Copy the aspire-dashboard files from the official image
+COPY --from=aspire / /
+
+# Expose ports
+EXPOSE 18888 18889
+
+# Set entrypoint (assuming aspire-dashboard has one)
+ENTRYPOINT ["/app/aspire-dashboard"]

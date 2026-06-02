@@ -1,0 +1,36 @@
+# Build stage
+FROM mcr.microsoft.com/dotnet/sdk:9.0 AS build
+WORKDIR /src
+
+# Copy solution and all project files to leverage docker cache
+COPY *.sln ./
+COPY node/*.csproj ./node/
+COPY raftLibrary/*.csproj ./raftLibrary/
+COPY raftTests/*.csproj ./raftTests/
+COPY StackDD/*.csproj ./StackDD/
+
+# Restore dependencies
+RUN dotnet restore ./node/node.csproj
+
+# Copy everything and build
+COPY . .
+WORKDIR /src/node
+RUN dotnet publish -c Release -o /app/publish
+
+# Runtime stage
+FROM mcr.microsoft.com/dotnet/aspnet:9.0 AS runtime
+WORKDIR /app
+
+# Copy published output from build stage
+COPY --from=build /app/publish .
+
+ENV ASPNETCORE_URLS=http://+:5000
+ENV ASPNETCORE_ENVIRONMENT=Development
+EXPOSE 5000
+
+# Install curl so the Compose healthcheck can run successfully
+RUN apt-get update \
+	&& apt-get install -y --no-install-recommends curl \
+	&& rm -rf /var/lib/apt/lists/*
+
+ENTRYPOINT ["dotnet", "node.dll"]

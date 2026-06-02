@@ -1,0 +1,210 @@
+@page "/node-status"
+@inject NodeService NodeService
+@rendermode InteractiveServer
+
+<PageTitle>Node Status</PageTitle>
+
+<div class="container mt-4">
+    <div class="row">
+        <div class="col-md-8">
+            <h1>Node Status</h1>
+            
+            @if (_node != null)
+            {
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Node Information</h5>
+                    </div>
+                    <div class="card-body">
+                        <div class="row">
+                            <div class="col-md-6">
+                                <p><strong>Name:</strong> <code>@_node.Name</code></p>
+                                <p><strong>State:</strong> 
+                                    @if (_node.State == NodeState.Leader)
+                                    {
+                                        <span class="badge bg-danger">Leader</span>
+                                    }
+                                    else if (_node.State == NodeState.Candidate)
+                                    {
+                                        <span class="badge bg-warning">Candidate</span>
+                                    }
+                                    else
+                                    {
+                                        <span class="badge bg-secondary">Follower</span>
+                                    }
+                                </p>
+                                <p><strong>Current Term:</strong> @_node.CurrentTerm</p>
+                            </div>
+                            <div class="col-md-6">
+                                <p><strong>Commit Index:</strong> @_node.CommitIndex</p>
+                                <p><strong>Last Applied:</strong> @_node.LastApplied</p>
+                                <p><strong>Logs Count:</strong> @_node.Logs.Count</p>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card mb-4">
+                    <div class="card-header">
+                        <h5 class="mb-0">Peers (@_node.Peers.Count)</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (_node.Peers.Count > 0)
+                        {
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Peer Name</th>
+                                        <th>Type</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var peer in _node.Peers)
+                                    {
+                                        <tr>
+                                            <td><code>@peer.Name</code></td>
+                                            <td>
+                                                @if (peer is HttpProxyNode)
+                                                {
+                                                    <span class="badge bg-info">HTTP Proxy</span>
+                                                }
+                                                else
+                                                {
+                                                    <span class="badge bg-success">Local</span>
+                                                }
+                                            </td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <p class="text-muted">No peers configured.</p>
+                        }
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h5 class="mb-0">Logs (@_node.Logs.Count)</h5>
+                    </div>
+                    <div class="card-body">
+                        @if (_node.Logs.Count > 0)
+                        {
+                            <table class="table table-sm">
+                                <thead>
+                                    <tr>
+                                        <th>Index</th>
+                                        <th>Term</th>
+                                        <th>Command</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    @foreach (var log in _node.Logs)
+                                    {
+                                        <tr>
+                                            <td>@log.index</td>
+                                            <td>@log.term</td>
+                                            <td><code>@log.Command</code></td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </table>
+                        }
+                        else
+                        {
+                            <p class="text-muted">No logs.</p>
+                        }
+                    </div>
+                </div>
+
+                <div class="mt-3">
+                    <button class="btn btn-primary" @onclick="RefreshStatus">Refresh</button>
+                    <button class="btn btn-secondary ms-2" @onclick="ToggleAutoRefresh">
+                        @if (_autoRefresh)
+                        {
+                            <span>Stop Auto-Refresh</span>
+                        }
+                        else
+                        {
+                            <span>Start Auto-Refresh</span>
+                        }
+                    </button>
+                </div>
+            }
+            else
+            {
+                <div class="alert alert-danger">
+                    Unable to load node status.
+                </div>
+            }
+        </div>
+    </div>
+</div>
+
+@code {
+    private Node? _node;
+    private bool _autoRefresh = false;
+    private PeriodicTimer? _refreshTimer;
+
+    protected override Task OnInitializedAsync()
+    {
+        RefreshStatus();
+        return Task.CompletedTask;
+    }
+
+    private void RefreshStatus()
+    {
+        try
+        {
+            _node = NodeService.GetCurrentNode();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"Error refreshing node status: {ex.Message}");
+        }
+    }
+
+    private void ToggleAutoRefresh()
+    {
+        _autoRefresh = !_autoRefresh;
+
+        if (_autoRefresh)
+        {
+            _refreshTimer = new PeriodicTimer(TimeSpan.FromSeconds(1));
+            _ = AutoRefreshLoop();
+        }
+        else
+        {
+            _refreshTimer?.Dispose();
+            _refreshTimer = null;
+        }
+    }
+
+    private async Task AutoRefreshLoop()
+    {
+        while (_autoRefresh && _refreshTimer != null)
+        {
+            try
+            {
+                if (await _refreshTimer.WaitForNextTickAsync())
+                {
+                    RefreshStatus();
+                    await InvokeAsync(StateHasChanged);
+                }
+            }
+            catch (ObjectDisposedException)
+            {
+                break;
+            }
+        }
+    }
+
+    private async ValueTask DisposeAsync()
+    {
+        _autoRefresh = false;
+        _refreshTimer?.Dispose();
+        await Task.CompletedTask;
+    }
+}

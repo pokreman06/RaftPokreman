@@ -1,0 +1,122 @@
+services:
+  node-1:
+    build:
+      context: .
+      dockerfile: Dockerfile.httpnode
+    ports:
+      - "5000:6920"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:6920
+      - NODE_NAME=Node-1
+      - NODE_PEERS_CSV=Node-2:http://node-2:6921,Node-3:http://node-3:6922
+    volumes:
+      - node1-keys:/app/keys
+    depends_on:
+      - aspire-dashboard
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6920"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  node-2:
+    build:
+      context: .
+      dockerfile: Dockerfile.httpnode
+    ports:
+      - "5001:6921"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:6921
+      - NODE_NAME=Node-2
+      - NODE_PEERS_CSV=Node-1:http://node-1:6920,Node-3:http://node-3:6922
+    volumes:
+      - node2-keys:/app/keys
+    depends_on:
+      - aspire-dashboard
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6921"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  node-3:
+    build:
+      context: .
+      dockerfile: Dockerfile.httpnode
+    ports:
+      - "5002:6922"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:6922
+      - NODE_NAME=Node-3
+      - NODE_PEERS_CSV=Node-1:http://node-1:6920,Node-2:http://node-2:6921
+    volumes:
+      - node3-keys:/app/keys
+    depends_on:
+      - aspire-dashboard
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6922"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  aspire-dashboard:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:8.0
+    ports:
+      - "18888:18888"
+      - "18889:18889"
+    healthcheck:
+      test: ["CMD", "bash", "-c", "echo > /dev/tcp/localhost/18888"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  dashboard:
+    image: nginx:alpine
+    ports:
+      - "8090:80"
+    volumes:
+      - ./dashboard:/usr/share/nginx/html:ro
+    depends_on:
+      - node-1
+      - node-2
+      - node-3
+      - aspire-dashboard
+    healthcheck:
+      test: ["CMD-SHELL", "test -f /usr/share/nginx/html/index.html || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+  http-node-view:
+    build:
+      context: .
+      dockerfile: Dockerfile.httpnodeview
+    ports:
+      - "5003:6923"
+      - "8091:6923"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:6923
+    depends_on:
+      - node-1
+      - node-2
+      - node-3
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6923"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+volumes:
+  node1-keys:
+  node2-keys:
+  node3-keys:

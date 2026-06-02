@@ -1,0 +1,27 @@
+Test run for C:\Users\pokre\raft-pokreman06\raftTests\bin\Debug\net9.0\raftTests.dll (.NETCoreApp,Version=v9.0)
+VSTest version 17.14.1 (x64)
+
+Starting test execution, please wait...
+A total of 1 test files matched the specified pattern.
+[xUnit.net 00:00:00.26]     raftTests.LogReplicationTests.TC4B_LeaderAchievesMajority_UpdatesCommitIndex [FAIL]
+  Failed raftTests.LogReplicationTests.TC4B_LeaderAchievesMajority_UpdatesCommitIndex [5 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at raftTests.LogReplicationTests.TC4B_LeaderAchievesMajority_UpdatesCommitIndex() in C:\Users\pokre\raft-pokreman06\raftTests\LogReplicationTests.cs:line 126
+--- End of stack trace from previous location ---
+[xUnit.net 00:00:00.31]     raftTests.LogReplicationTests.TC13_LeaderCommandReplication_EntryReplicatedToMajority [FAIL]
+  Failed raftTests.LogReplicationTests.TC13_LeaderCommandReplication_EntryReplicatedToMajority [1 ms]
+  Error Message:
+   Assert.True() Failure
+Expected: True
+Actual:   False
+  Stack Trace:
+     at raftTests.LogReplicationTests.TC13_LeaderCommandReplication_EntryReplicatedToMajority() in C:\Users\pokre\raft-pokreman06\raftTests\LogReplicationTests.cs:line 348
+--- End of stack trace from previous location ---
+
+Failed!  - Failed:     2, Passed:    48, Skipped:     0, Total:    50, Duration: 2 s - raftTests.dll (net9.0)
+
+Workload updates are available. Run `dotnet workload list` for more information.

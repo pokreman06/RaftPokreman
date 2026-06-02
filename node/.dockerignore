@@ -1,0 +1,53 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# IDEs
+.vs
+.vscode
+*.swp
+*.swo
+*~
+.idea
+*.user
+*.userprefs
+*.suo
+.DS_Store
+
+# Build outputs
+bin/
+obj/
+*.o
+*.a
+*.so
+*.dylib
+
+# Dependencies
+node_modules/
+package-lock.json
+yarn.lock
+
+# Test results
+TestResults/
+coverage/
+*.trx
+
+# Build artifacts
+*.nupkg
+*.snupkg
+
+# Docker
+Dockerfile*
+.dockerignore
+docker-compose*.yml
+
+# Documentation
+*.md
+README
+LICENSE
+
+# OS specific
+Thumbs.db
+.AppleDouble
+.LSOverride

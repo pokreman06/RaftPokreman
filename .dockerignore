@@ -1,0 +1,6 @@
+node/bin/
+node/obj/
+node/.vs/
+.git
+.vscode
+**/*.user

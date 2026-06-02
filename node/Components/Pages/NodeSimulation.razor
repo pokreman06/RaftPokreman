@@ -1,0 +1,217 @@
+@page "/simulation"
+@using node.Classes
+@using raftLibrary
+@rendermode InteractiveServer
+@implements IDisposable
+
+<PageTitle>Raft Node Simulation</PageTitle>
+
+<div class="simulation-container">
+    <h1>Raft Node Simulation</h1>
+    
+    <!-- Global Controls -->
+    <div class="global-controls card mb-4">
+        <div class="card-header">
+            <h4>Global Settings</h4>
+        </div>
+        <div class="card-body">
+            <div class="row">
+                <div class="col-md-6">
+                    <label class="form-label">Network Delay (ms): @globalNetworkDelay</label>
+                    <input type="range" class="form-range" min="0" max="2000" step="50" 
+                           @bind="globalNetworkDelay" @bind:event="oninput" @onchange="ApplyGlobalNetworkDelay" />
+                    <div class="d-flex justify-content-between">
+                        <small>0ms (Instant)</small>
+                        <small>2000ms (Slow)</small>
+                    </div>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Election Timeout (ms): @globalTimeoutMs</label>
+                    <input type="range" class="form-range" min="150" max="5000" step="50" 
+                           @bind="globalTimeoutMs" @bind:event="oninput" @onchange="ApplyGlobalTimeout" />
+                    <div class="d-flex justify-content-between">
+                        <small>150ms (Fast)</small>
+                        <small>5000ms (Slow)</small>
+                    </div>
+                </div>
+            </div>
+            <div class="mt-3">
+                <button class="btn btn-primary me-2" @onclick="StartSimulation" disabled="@isRunning">
+                    <i class="bi bi-play-fill"></i> Start
+                </button>
+                <button class="btn btn-warning me-2" @onclick="PauseSimulation" disabled="@(!isRunning)">
+                    <i class="bi bi-pause-fill"></i> Pause
+                </button>
+                <button class="btn btn-secondary" @onclick="ResetSimulation">
+                    <i class="bi bi-arrow-clockwise"></i> Reset
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Command Input Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Send Command to Node</h4>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Select Node</label>
+                    <select class="form-select" @bind="selectedNodeIndex">
+                        @for (int i = 0; i < proxyNodes.Count; i++)
+                        {
+                            <option value="@i">@proxyNodes[i].Name</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Key</label>
+                    <input type="text" class="form-control" @bind="commandKey" placeholder="e.g., mykey" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Value</label>
+                    <input type="text" class="form-control" @bind="commandValue" placeholder="e.g., myvalue" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button class="btn btn-info w-100" @onclick="SendCommand">Send Command</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(commandResponse))
+            {
+                <div class="alert alert-info mt-3 mb-0">
+                    <strong>Response:</strong> @commandResponse
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Node Cards -->
+    <div class="row">
+        @foreach (var node in proxyNodes)
+        {
+            <div class="col-md-4">
+                <NodeCard Node="node" OnStateChanged="StateHasChanged" />
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .simulation-container {
+        padding: 20px;
+    }
+
+    .global-controls {
+        background-color: #f8f9fa;
+    }
+</style>
+
+@code {
+    private List<ProxyNode> proxyNodes = new();
+    private int globalNetworkDelay = 100;
+    private int globalTimeoutMs = 1000;
+    private bool isRunning = false;
+    private System.Threading.Timer? simulationTimer;
+    private DateTime lastTick;
+    private int selectedNodeIndex = 0;
+    private string commandKey = "";
+    private string commandValue = "";
+    private string commandResponse = "";
+
+    protected override void OnInitialized()
+    {
+        // Initialize 3 proxy nodes
+        proxyNodes = new List<ProxyNode>
+        {
+            new ProxyNode("Node 1") { NetworkDelayMs = globalNetworkDelay, TimeoutMs = globalTimeoutMs },
+            new ProxyNode("Node 2") { NetworkDelayMs = globalNetworkDelay, TimeoutMs = globalTimeoutMs },
+            new ProxyNode("Node 3") { NetworkDelayMs = globalNetworkDelay, TimeoutMs = globalTimeoutMs }
+        };
+
+        // Set up peer relationships and start election timers
+        foreach (var node in proxyNodes)
+        {
+            node.InnerNode.Peers = proxyNodes.Where(n => n != node).Cast<INode>().ToList();
+            node.StartElectionTimer();  // Start timer after peers are configured
+        }
+    }
+
+    private void StartSimulation()
+    {
+        isRunning = true;
+        lastTick = DateTime.UtcNow;
+        simulationTimer = new System.Threading.Timer(SimulationTick, null, 0, 50);
+    }
+
+    private void PauseSimulation()
+    {
+        isRunning = false;
+        simulationTimer?.Dispose();
+        simulationTimer = null;
+    }
+
+    private void ResetSimulation()
+    {
+        PauseSimulation();
+        foreach (var node in proxyNodes)
+        {
+            node.ResetTimeout();
+            node.State = NodeState.Follower;
+            node.CurrentTerm = 0;
+        }
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void SimulationTick(object? state)
+    {
+        var now = DateTime.UtcNow;
+        var elapsed = (now - lastTick).TotalMilliseconds;
+        lastTick = now;
+
+        foreach (var node in proxyNodes)
+        {
+            node.IncrementTimeout(elapsed);
+        }
+
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyGlobalNetworkDelay()
+    {
+        foreach (var node in proxyNodes)
+        {
+            node.NetworkDelayMs = globalNetworkDelay;
+        }
+    }
+
+    private void ApplyGlobalTimeout()
+    {
+        foreach (var node in proxyNodes)
+        {
+            node.TimeoutMs = globalTimeoutMs;
+        }
+    }
+
+    private async Task SendCommand()
+    {
+        if (string.IsNullOrWhiteSpace(commandKey) || string.IsNullOrWhiteSpace(commandValue))
+        {
+            commandResponse = "Please enter both key and value";
+            return;
+        }
+
+        var selectedNode = proxyNodes[selectedNodeIndex];
+        var command = $"{commandKey}:{commandValue}";
+        var response = await selectedNode.RecieveCommand(command);
+        commandResponse = $"{selectedNode.Name} received command. Leader: {response}";
+        commandKey = "";
+        commandValue = "";
+    }
+
+    public void Dispose()
+    {
+        simulationTimer?.Dispose();
+    }
+}

@@ -1,0 +1,469 @@
+﻿@page "/"
+@using System.Text.Json
+@rendermode InteractiveServer
+@implements IDisposable
+@inject HttpClient HttpClient
+
+<PageTitle>Raft Cluster Monitor</PageTitle>
+
+<div class="cluster-monitor-container">
+    <h1>Raft Cluster Monitor</h1>
+    
+    <!-- Command Input Section -->
+    <div class="card mb-4">
+        <div class="card-header">
+            <h4>Send Command to Node</h4>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-3">
+                    <label class="form-label">Select Node</label>
+                    <select class="form-select" @bind="selectedNodeEndpoint">
+                        @foreach (var endpoint in nodeEndpoints)
+                        {
+                            <option value="@endpoint">@GetNodeName(endpoint)</option>
+                        }
+                    </select>
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Key</label>
+                    <input type="text" class="form-control" @bind="commandKey" placeholder="e.g., mykey" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">Value</label>
+                    <input type="text" class="form-control" @bind="commandValue" placeholder="e.g., myvalue" />
+                </div>
+                <div class="col-md-3">
+                    <label class="form-label">&nbsp;</label>
+                    <button class="btn btn-info w-100" @onclick="SendCommand">Send Command</button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(commandResponse))
+            {
+                <div class="alert alert-info mt-3 mb-0">
+                    <strong>Response:</strong> @commandResponse
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Refresh Controls -->
+    <div class="monitor-controls card mb-4">
+        <div class="card-header">
+            <h4>Cluster Status</h4>
+        </div>
+        <div class="card-body">
+            <div class="row align-items-center">
+                <div class="col-md-9">
+                    <label class="form-label">Auto-Refresh Interval (ms): @refreshInterval</label>
+                    <input type="range" class="form-range" min="500" max="5000" step="250" 
+                           @bind="refreshInterval" @bind:event="oninput" />
+                    <div class="d-flex justify-content-between">
+                        <small>500ms (Fast)</small>
+                        <small>5000ms (Slow)</small>
+                    </div>
+                </div>
+                <div class="col-md-3">
+                    <button class="btn btn-primary w-100" @onclick="RefreshNodes">
+                        <i class="bi bi-arrow-clockwise"></i> Refresh Now
+                    </button>
+                </div>
+            </div>
+            @if (!string.IsNullOrEmpty(lastUpdated))
+            {
+                <small class="text-muted mt-2">Last updated: @lastUpdated</small>
+            }
+            @if (!string.IsNullOrEmpty(errorMessage))
+            {
+                <div class="alert alert-danger mt-3 mb-0">
+                    <strong>Error:</strong> @errorMessage
+                </div>
+            }
+        </div>
+    </div>
+
+    <!-- Node Cards -->
+    <div class="row">
+        @if (nodeDetails != null && nodeDetails.Count > 0)
+        {
+            @foreach (var nodeDetail in nodeDetails)
+            {
+                var nodeEndpoint = GetEndpointByIndex(nodeDetails.IndexOf(nodeDetail));
+                <div class="col-md-4">
+                    <div class="card h-100">
+                        <div class="card-header" style="background-color: @GetStatusColor(nodeDetail.State)">
+                            <div class="d-flex justify-content-between align-items-center">
+                                <h5 class="mb-0">@GetNodeName(nodeEndpoint)</h5>
+                                <button class="btn btn-sm @(nodeDetail.IsUp ? "btn-danger" : "btn-success")" 
+                                        @onclick="() => InitiateShutdown(nodeEndpoint)">
+                                    <i class="bi @(nodeDetail.IsUp ? "bi-power" : "bi-play-fill")"></i> @(nodeDetail.IsUp ? "Shutdown" : "Turn On")
+                                </button>
+                                <span @if (!nodeDetail.IsUp) { class="badge bg-dark"; }>
+                                    @if (!nodeDetail.IsUp) { <text>OFFLINE</text> }
+                                </span>
+                            </div>
+                        </div>
+                        <div class="card-body">
+                            <div class="node-detail-row">
+                                <strong>State:</strong> <span class="badge" style="background-color: @GetStateColor(nodeDetail.State)">@nodeDetail.State</span>
+                            </div>
+                            <div class="node-detail-row">
+                                <strong>Status:</strong> <span class="badge" style="background-color: @(nodeDetail.IsUp ? "#28a745" : "#dc3545")">@(nodeDetail.IsUp ? "UP" : "DOWN")</span>
+                            </div>
+                            <div class="node-detail-row">
+                                <strong>Current Term:</strong> <code>@nodeDetail.CurrentTerm</code>
+                            </div>
+                            <div class="node-detail-row">
+                                <strong>Commit Index:</strong> <code>@nodeDetail.CommitIndex</code>
+                            </div>
+                            <div class="node-detail-row">
+                                <strong>Last Applied:</strong> <code>@nodeDetail.LastApplied</code>
+                            </div>
+                            <div class="node-detail-row">
+                                <strong>Logs Count:</strong> <code>@nodeDetail.LogsCount</code>
+                            </div>
+                            <div class="node-detail-row">
+                                <strong>Election Timeout:</strong>
+                                <div class="timeout-bar mt-2 mb-2">
+                                    <div class="timeout-progress" style="width: @GetTimeoutPercentage(nodeDetail)%"></div>
+                                </div>
+                                <small class="text-muted">@nodeDetail.CurrentTimeoutMs / @nodeDetail.TimeoutMs ms</small>
+                            </div>
+                            @if (nodeDetail.State == NodeState.Leader)
+                            {
+                                <div class="node-detail-row">
+                                    <strong>MatchIndex:</strong>
+                                    @if (nodeDetail.MatchIndex != null && nodeDetail.MatchIndex.Length > 0)
+                                    {
+                                        <div class="mt-2">
+                                            @for (int i = 0; i < nodeDetail.MatchIndex.Length; i++)
+                                            {
+                                                <span class="badge bg-secondary me-1 mb-1">Node @i: @nodeDetail.MatchIndex[i]</span>
+                                            }
+                                        </div>
+                                    }
+                                    else
+                                    {
+                                        <span class="text-muted"><small>@(nodeDetail.MatchIndex == null ? "MatchIndex is null" : "MatchIndex array is empty")</small></span>
+                                    }
+                                </div>
+                            }
+                            <div class="node-detail-row">
+                                <strong>State Machine:</strong>
+                                @if (nodeDetail.StateMachine != null && nodeDetail.StateMachine.Count > 0)
+                                {
+                                    <div class="mt-2">
+                                        @foreach (var kvp in nodeDetail.StateMachine)
+                                        {
+                                            <div class="state-machine-entry mb-2">
+                                                <code>@kvp.Key</code> = <code>@kvp.Value</code>
+                                            </div>
+                                        }
+                                    </div>
+                                }
+                                else
+                                {
+                                    <span class="text-muted"><small>No entries</small></span>
+                                }
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
+        }
+        else
+        {
+            <div class="col-12">
+                <div class="alert alert-info">
+                    Loading node information...
+                </div>
+            </div>
+        }
+    </div>
+</div>
+
+<style>
+    .cluster-monitor-container {
+        padding: 20px;
+    }
+
+    .monitor-controls {
+        background-color: #f8f9fa;
+    }
+
+    .node-detail-row {
+        margin-bottom: 12px;
+        padding-bottom: 8px;
+        border-bottom: 1px solid #e0e0e0;
+    }
+
+    .node-detail-row:last-child {
+        margin-bottom: 0;
+        border-bottom: none;
+    }
+
+    .card {
+        box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .card:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 8px rgba(0, 0, 0, 0.15);
+    }
+
+    .timeout-bar {
+        width: 100%;
+        height: 20px;
+        background-color: #e9ecef;
+        border-radius: 4px;
+        overflow: hidden;
+        border: 1px solid #dee2e6;
+    }
+
+    .timeout-progress {
+        height: 100%;
+        background: linear-gradient(90deg, #28a745, #ffc107, #dc3545);
+        transition: width 0.1s linear;
+    }
+
+    .state-machine-entry {
+        background-color: #f8f9fa;
+        padding: 8px 12px;
+        border-radius: 4px;
+        border-left: 3px solid #007bff;
+        font-family: 'Courier New', monospace;
+        font-size: 0.9em;
+    }
+</style>
+
+@code {
+    private List<NodeStatusResponse> nodeDetails = new();
+    private int refreshInterval = 1000;
+    private string lastUpdated = "";
+    private string errorMessage = "";
+    private System.Threading.Timer? refreshTimer;
+    private string selectedNodeEndpoint = "";
+    private string commandKey = "";
+    private string commandValue = "";
+    private string commandResponse = "";
+
+    // Node endpoints based on docker-compose configuration
+    // Uses Docker service names when containerized, localhost when running locally
+    private List<string> nodeEndpoints = new()
+    {
+        "http://node-1:5000/api/node",
+        "http://node-2:5001/api/node",
+        "http://node-3:5002/api/node"
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        selectedNodeEndpoint = nodeEndpoints.First();
+        await RefreshNodes();
+        StartAutoRefresh();
+    }
+
+    private void StartAutoRefresh()
+    {
+        refreshTimer?.Dispose();
+        refreshTimer = new System.Threading.Timer(async _ => await RefreshNodes(), null, refreshInterval, refreshInterval);
+    }
+
+    private async Task RefreshNodes()
+    {
+        try
+        {
+            errorMessage = "";
+            var tasks = nodeEndpoints.Select(endpoint => FetchNodeDetails(endpoint)).ToList();
+            var results = await Task.WhenAll(tasks);
+            nodeDetails = results.Where(n => n != null).Cast<NodeStatusResponse>().ToList();
+            lastUpdated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            await InvokeAsync(StateHasChanged);
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Failed to fetch node details: {ex.Message}";
+            lastUpdated = DateTime.Now.ToString("yyyy-MM-dd HH:mm:ss");
+            await InvokeAsync(StateHasChanged);
+        }
+    }
+
+    private async Task<NodeStatusResponse?> FetchNodeDetails(string endpoint)
+    {
+        try
+        {
+            var response = await HttpClient.GetAsync($"{endpoint}/status");
+            if (response.IsSuccessStatusCode)
+            {
+                var content = await response.Content.ReadAsStringAsync();
+                var nodeStatus = JsonSerializer.Deserialize<NodeStatusResponse>(content, 
+                    new JsonSerializerOptions { PropertyNameCaseInsensitive = true });
+                return nodeStatus;
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+            {
+                // Node is shut down, return a minimal response showing it's offline
+                return new NodeStatusResponse
+                {
+                    Name = $"Offline Node - {endpoint}",
+                    State = NodeState.Follower,
+                    CurrentTerm = 0,
+                    CommitIndex = -1,
+                    LastApplied = -1,
+                    LogsCount = 0,
+                    MatchIndex = null,
+                    IsUp = false,
+                    CurrentTimeoutMs = 0,
+                    TimeoutMs = 0
+                };
+            }
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"Error fetching {endpoint}: {ex.Message}");
+        }
+        return null;
+    }
+
+    private async Task SendCommand()
+    {
+        if (string.IsNullOrWhiteSpace(commandKey) || string.IsNullOrWhiteSpace(commandValue))
+        {
+            commandResponse = "Please enter both key and value";
+            return;
+        }
+
+        try
+        {
+            var command = $"{commandKey}:{commandValue}";
+            var request = new { Command = command };
+            var json = JsonSerializer.Serialize(request);
+            var content = new StringContent(json, System.Text.Encoding.UTF8, "application/json");
+            
+            var response = await HttpClient.PostAsync($"{selectedNodeEndpoint}/command", content);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+                commandResponse = $"Command sent successfully. Response: {result}";
+            }
+            else
+            {
+                commandResponse = $"Error: {response.StatusCode} - {await response.Content.ReadAsStringAsync()}";
+            }
+        }
+        catch (Exception ex)
+        {
+            commandResponse = $"Error sending command: {ex.Message}";
+        }
+
+        commandKey = "";
+        commandValue = "";
+    }
+
+    private string GetNodeName(string endpoint)
+    {
+        return endpoint switch
+        {
+            "http://node-1:5000/api/node" => "Node 1",
+            "http://node-2:5001/api/node" => "Node 2",
+            "http://node-3:5002/api/node" => "Node 3",
+            _ => "Unknown Node"
+        };
+    }
+
+    private string GetStatusColor(NodeState state)
+    {
+        return state switch
+        {
+            NodeState.Leader => "#007bff",
+            NodeState.Candidate => "#ffc107",
+            NodeState.Follower => "#28a745",
+            _ => "#6c757d"
+        };
+    }
+
+    private string GetStateColor(NodeState state)
+    {
+        return state switch
+        {
+            NodeState.Leader => "#0056b3",
+            NodeState.Candidate => "#ffc107",
+            NodeState.Follower => "#28a745",
+            _ => "#6c757d"
+        };
+    }
+
+    public void Dispose()
+    {
+        refreshTimer?.Dispose();
+    }
+
+    public class NodeStatusResponse
+    {
+        public string Name { get; set; } = "";
+        public NodeState State { get; set; }
+        public int CurrentTerm { get; set; }
+        public int CommitIndex { get; set; }
+        public int LastApplied { get; set; }
+        public int LogsCount { get; set; }
+        public int[]? MatchIndex { get; set; }
+        public bool IsUp { get; set; } = true;
+        public int CurrentTimeoutMs { get; set; }
+        public int TimeoutMs { get; set; }
+        public Dictionary<string, string> StateMachine { get; set; } = new();
+    }
+
+    public enum NodeState
+    {
+        Leader,
+        Candidate,
+        Follower
+    }
+
+    private string GetTimeoutPercentage(NodeStatusResponse node)
+    {
+        if (node.TimeoutMs <= 0) return "0";
+        // Calculate percentage: (TimeoutMs - CurrentTimeoutMs) / TimeoutMs * 100
+        // This shows how much time has elapsed
+        double percentage = ((node.TimeoutMs - node.CurrentTimeoutMs) / (double)node.TimeoutMs) * 100;
+        return Math.Max(0, Math.Min(100, percentage)).ToString("F1");
+    }
+
+    private async Task InitiateShutdown(string endpoint)
+    {
+        try
+        {
+            var response = await HttpClient.PostAsync($"{endpoint}/shutdown", null);
+            if (response.IsSuccessStatusCode)
+            {
+                var result = await response.Content.ReadAsStringAsync();
+                errorMessage = $"{result}";
+                await RefreshNodes();
+            }
+            else if (response.StatusCode == System.Net.HttpStatusCode.ServiceUnavailable)
+            {
+                errorMessage = $"Node is unavailable";
+                await RefreshNodes();
+            }
+            else
+            {
+                errorMessage = $"Error: {response.StatusCode}";
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = $"Error: {ex.Message}";
+        }
+        await InvokeAsync(StateHasChanged);
+    }
+
+    private string GetEndpointByIndex(int index)
+    {
+        if (index >= 0 && index < nodeEndpoints.Count)
+        {
+            return nodeEndpoints[index];
+        }
+        return nodeEndpoints.First();
+    }
+}

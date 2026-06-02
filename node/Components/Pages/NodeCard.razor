@@ -1,0 +1,269 @@
+@using node.Classes
+@using raftLibrary
+
+<div class="card node-card @GetNodeCardClass(Node.State)">
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <h5 class="mb-0">@Node.Name</h5>
+        <span class="badge @GetStateBadgeClass(Node.State)">@Node.State</span>
+    </div>
+    <div class="card-body">
+        <!-- Timeout Bar -->
+        <div class="mb-3">
+            <label class="form-label">Timeout Progress</label>
+            <div class="progress" style="height: 25px;">
+                <div class="progress-bar @GetTimeoutBarClass(Node)" 
+                     role="progressbar" 
+                     style="width: @Node.TimeoutProgress%"
+                     aria-valuenow="@Node.TimeoutProgress" 
+                     aria-valuemin="0" 
+                     aria-valuemax="100">
+                    @Node.TimeoutProgress.ToString("F0")%
+                </div>
+            </div>
+        </div>
+
+        <!-- Node Info -->
+        <div class="node-info mb-3">
+            <p><strong>Term:</strong> @Node.CurrentTerm</p>
+            <p><strong>CommitIndex:</strong> @Node.CommitIndex</p>
+            <p><strong>LastApplied:</strong> @Node.LastApplied</p>
+            <p><strong>Network Delay:</strong> @Node.NetworkDelayMs ms</p>
+            <p><strong>Timeout:</strong> @Node.TimeoutMs ms</p>
+        </div>
+
+        <!-- State Machine -->
+        @if (Node.StateMachine.Count > 0)
+        {
+            <div class="state-machine mb-3">
+                <label class="form-label"><strong>State Machine:</strong></label>
+                <div class="state-machine-content">
+                    @foreach (var kvp in Node.StateMachine)
+                    {
+                        <div class="state-machine-entry">
+                            <span class="key">@kvp.Key</span>: <span class="value">@kvp.Value</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="state-machine mb-3 empty">
+                <label class="form-label"><strong>State Machine:</strong> (empty)</label>
+            </div>
+        }
+
+        <!-- Logs -->
+        @if (Node.Logs.Count > 0)
+        {
+            <div class="logs mb-3">
+                <label class="form-label"><strong>Logs:</strong></label>
+                <div class="logs-content">
+                    @foreach (var log in Node.Logs)
+                    {
+                        <div class="log-entry">
+                            <span class="index">[@log.index]</span>
+                            <span class="term">T@log.term</span>
+                            <span class="command">@log.Command</span>
+                        </div>
+                    }
+                </div>
+            </div>
+        }
+        else
+        {
+            <div class="logs mb-3 empty">
+                <label class="form-label"><strong>Logs:</strong> (empty)</label>
+            </div>
+        }
+
+        <!-- Individual Node Controls -->
+        <div class="node-controls">
+            <div class="mb-2">
+                <label class="form-label small">Network Delay: @Node.NetworkDelayMs ms</label>
+                <input type="range" class="form-range" min="0" max="2000" step="50" 
+                       @bind="Node.NetworkDelayMs" @bind:event="oninput" />
+            </div>
+            <div class="mb-2">
+                <label class="form-label small">Timeout: @Node.TimeoutMs ms</label>
+                <input type="range" class="form-range" min="150" max="5000" step="50" 
+                       @bind="Node.TimeoutMs" @bind:event="oninput" />
+            </div>
+        </div>
+
+        <!-- State Change Buttons -->
+        <div class="btn-group w-100 mt-2" role="group">
+            <button class="btn btn-sm btn-outline-success" @onclick="() => SetState(NodeState.Leader)">Leader</button>
+            <button class="btn btn-sm btn-outline-warning" @onclick="() => SetState(NodeState.Candidate)">Candidate</button>
+            <button class="btn btn-sm btn-outline-secondary" @onclick="() => SetState(NodeState.Follower)">Follower</button>
+        </div>
+    </div>
+</div>
+
+<style>
+    .node-card {
+        margin-bottom: 20px;
+        transition: all 0.3s ease;
+    }
+
+    .node-card.leader {
+        border-color: #198754;
+        box-shadow: 0 0 10px rgba(25, 135, 84, 0.3);
+    }
+
+    .node-card.candidate {
+        border-color: #ffc107;
+        box-shadow: 0 0 10px rgba(255, 193, 7, 0.3);
+    }
+
+    .node-card.follower {
+        border-color: #6c757d;
+    }
+
+    .progress-bar {
+        transition: width 0.1s linear;
+    }
+
+    .timeout-normal {
+        background-color: #0d6efd;
+    }
+
+    .timeout-warning {
+        background-color: #ffc107;
+    }
+
+    .timeout-critical {
+        background-color: #dc3545;
+    }
+
+    .node-info p {
+        margin-bottom: 0.25rem;
+    }
+
+    .state-machine {
+        padding: 10px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+    }
+
+    .state-machine.empty {
+        color: #6c757d;
+        font-style: italic;
+    }
+
+    .state-machine-content {
+        padding: 8px;
+        background-color: white;
+        border-radius: 3px;
+        font-family: monospace;
+        font-size: 0.9rem;
+    }
+
+    .state-machine-entry {
+        padding: 4px 0;
+        border-bottom: 1px solid #e9ecef;
+    }
+
+    .state-machine-entry:last-child {
+        border-bottom: none;
+    }
+
+    .state-machine-entry .key {
+        color: #0d6efd;
+        font-weight: bold;
+    }
+
+    .state-machine-entry .value {
+        color: #198754;
+    }
+
+    .logs {
+        padding: 10px;
+        border: 1px solid #dee2e6;
+        border-radius: 4px;
+        background-color: #f8f9fa;
+    }
+
+    .logs.empty {
+        color: #6c757d;
+        font-style: italic;
+    }
+
+    .logs-content {
+        padding: 8px;
+        background-color: white;
+        border-radius: 3px;
+        font-family: monospace;
+        font-size: 0.85rem;
+        max-height: 150px;
+        overflow-y: auto;
+    }
+
+    .log-entry {
+        padding: 4px 0;
+        border-bottom: 1px solid #e9ecef;
+        display: flex;
+        gap: 8px;
+    }
+
+    .log-entry:last-child {
+        border-bottom: none;
+    }
+
+    .log-entry .index {
+        color: #6c757d;
+        font-weight: bold;
+    }
+
+    .log-entry .term {
+        color: #fd7e14;
+        font-weight: bold;
+    }
+
+    .log-entry .command {
+        color: #0d6efd;
+        flex: 1;
+    }
+</style>
+
+@code {
+    [Parameter]
+    public required ProxyNode Node { get; set; }
+
+    [Parameter]
+    public EventCallback<NodeState> OnStateChanged { get; set; }
+
+    private async Task SetState(NodeState state)
+    {
+        Node.State = state;
+        if (state == NodeState.Leader)
+        {
+            Node.ResetTimeout();
+        }
+        await OnStateChanged.InvokeAsync(state);
+    }
+
+    private string GetNodeCardClass(NodeState state) => state switch
+    {
+        NodeState.Leader => "leader",
+        NodeState.Candidate => "candidate",
+        NodeState.Follower => "follower",
+        _ => ""
+    };
+
+    private string GetStateBadgeClass(NodeState state) => state switch
+    {
+        NodeState.Leader => "bg-success",
+        NodeState.Candidate => "bg-warning text-dark",
+        NodeState.Follower => "bg-secondary",
+        _ => "bg-secondary"
+    };
+
+    private string GetTimeoutBarClass(ProxyNode node)
+    {
+        if (node.TimeoutProgress >= 80) return "timeout-critical";
+        if (node.TimeoutProgress >= 50) return "timeout-warning";
+        return "timeout-normal";
+    }
+}
